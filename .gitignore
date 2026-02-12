@@ -1,0 +1,19 @@
+# Rust build artifacts
+/target
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Debug
+*.pdb
+
+# Homebrew tap (separate repo - see homebrew-tap/README.md)
+/homebrew-tap/
