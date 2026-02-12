@@ -17,3 +17,6 @@ Thumbs.db
 
 # Homebrew tap (separate repo - see homebrew-tap/README.md)
 /homebrew-tap/
+
+# Cursor
+.cursor/
