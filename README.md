@@ -295,6 +295,19 @@ When you `gcpx switch <name>`:
 5. Switches kubectl context (if one was saved)
 6. Updates the `.current` tracking file
 
+## Platform Support
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| macOS (Apple Silicon) | **Tested** | Primary development platform |
+| macOS (Intel) | Built | Smoke tested in CI |
+| Linux (x86_64) | Built | Smoke tested in CI |
+| Linux (ARM64) | Built | Cross-compiled, not runtime tested |
+| Linux (musl) | Built | Cross-compiled, not runtime tested |
+| Windows (x86_64) | Built | Smoke tested in CI |
+
+Binaries are provided for all platforms above. If you encounter issues on any platform, please [open an issue](https://github.com/andres-pcg/gcpx/issues).
+
 ## Security
 
 - Credential files are stored with `0600` permissions (owner read/write only)
