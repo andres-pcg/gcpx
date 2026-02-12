@@ -123,8 +123,9 @@ pub fn load_context_metadata(name: &str) -> Result<Option<ContextMetadata>> {
 }
 
 /// Gets the current active gcloud configuration name.
+/// Returns "default" if gcloud is not installed or no active config is found.
 pub fn get_current_gcloud_config() -> Result<String> {
-    let output = std::process::Command::new("gcloud")
+    let output = match std::process::Command::new("gcloud")
         .args([
             "config",
             "configurations",
@@ -133,7 +134,10 @@ pub fn get_current_gcloud_config() -> Result<String> {
             "--format=value(name)",
         ])
         .output()
-        .context("Failed to get current gcloud config")?;
+    {
+        Ok(output) => output,
+        Err(_) => return Ok("default".to_string()),
+    };
 
     let config = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if config.is_empty() {
@@ -144,11 +148,15 @@ pub fn get_current_gcloud_config() -> Result<String> {
 }
 
 /// Gets the current gcloud account.
+/// Returns None if gcloud is not installed or no account is set.
 pub fn get_current_gcloud_account() -> Result<Option<String>> {
-    let output = std::process::Command::new("gcloud")
+    let output = match std::process::Command::new("gcloud")
         .args(["config", "get-value", "account"])
         .output()
-        .context("Failed to get current gcloud account")?;
+    {
+        Ok(output) => output,
+        Err(_) => return Ok(None),
+    };
 
     let account = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if account.is_empty() || account == "(unset)" {
@@ -159,11 +167,15 @@ pub fn get_current_gcloud_account() -> Result<Option<String>> {
 }
 
 /// Gets the current gcloud project.
+/// Returns None if gcloud is not installed or no project is set.
 pub fn get_current_gcloud_project() -> Result<Option<String>> {
-    let output = std::process::Command::new("gcloud")
+    let output = match std::process::Command::new("gcloud")
         .args(["config", "get-value", "project"])
         .output()
-        .context("Failed to get current gcloud project")?;
+    {
+        Ok(output) => output,
+        Err(_) => return Ok(None),
+    };
 
     let project = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if project.is_empty() || project == "(unset)" {
