@@ -17,6 +17,7 @@
 
 pub mod commands;
 pub mod config;
+pub mod workspace;
 
 // Re-export commonly used items
 pub use commands::{
@@ -24,3 +25,4 @@ pub use commands::{
     switch_context,
 };
 pub use config::{ContextMetadata, get_current_tracking, list_contexts, validate_context_name};
+pub use workspace::{find_workspace_config, WorkspaceConfig};

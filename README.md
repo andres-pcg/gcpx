@@ -31,6 +31,7 @@ Managing multiple GCP accounts is painful:
 | **Completions** | Shell completion for bash, zsh, fish, powershell |
 | **kubectl** | Automatically saves and restores kubectl context |
 | **Smart skip** | Skips switching if already on the requested context |
+| **Workspace config** | Pin a project to a context via `.gcpx.toml` (discovered from cwd and parents) |
 
 ## Installation
 
@@ -92,6 +93,53 @@ gcpx list
 gcpx current
 # Output: work
 ```
+
+### Workspace / project-level config
+
+You can pin a project or workspace to a specific gcpx context so that:
+
+- **Interactive switch** (`gcpx` or `gcpx switch`) pre-selects that context in the menu.
+- **`gcpx switch --workspace`** switches directly to the context defined for the current project (no menu).
+
+Create a `.gcpx.toml` (or `.gcpx.json`) in the project root:
+
+```toml
+# .gcpx.toml
+context = "work"
+```
+
+gcpx discovers config by walking from the **current working directory** up through parent directories until it finds a config file or reaches your home directory. So from any subdirectory of the project, the same config applies.
+
+**Auto-switch when you `cd` (or open a terminal):** Add a hook to your shell so that when you change directory (or when the prompt runs), gcpx switches to the workspace context automatically and silently. No need to run `gcpx switch --workspace` by hand.
+
+| Shell | Add to your config |
+|-------|--------------------|
+| **Zsh** | `chpwd() { gcpx switch --workspace --silent 2>/dev/null }` (and run once when the shell starts: e.g. call it from `.zshrc` after defining it, or use a `precmd` that runs on first prompt) |
+| **Bash** | `PROMPT_COMMAND='gcpx switch --workspace --silent 2>/dev/null; '"$PROMPT_COMMAND"` |
+| **Fish** | `function __gcpx_auto_switch; gcpx switch --workspace --silent 2>/dev/null; end; add_prompt __gcpx_auto_switch` or run it in `fish_prompt` |
+
+Example for **Zsh**:
+
+```bash
+# In ~/.zshrc
+gcpx_auto_switch() { gcpx switch --workspace --silent 2>/dev/null }
+autoload -U add-zsh-hook
+add-zsh-hook chpwd gcpx_auto_switch
+add-zsh-hook precmd gcpx_auto_switch
+```
+
+Example for **Bash**:
+
+```bash
+# In ~/.bashrc
+PROMPT_COMMAND="gcpx switch --workspace --silent 2>/dev/null; ${PROMPT_COMMAND:-true}"
+```
+
+Optional: to avoid running gcpx on every prompt when you stay in the same directory, only run when the directory changes (e.g. in Zsh, guard with `if [[ "$(pwd)" != "$GCPX_LAST_CWD" ]]; then ...; GCPX_LAST_CWD=$(pwd); fi`).
+
+When there’s no `.gcpx.toml` in the path, the command does nothing (and stderr is discarded), so it’s safe to use everywhere.
+
+**Important:** The config we use is the one in the **current working directory** (or the nearest parent that has a `.gcpx.toml`). So if you open your IDE with a **parent** folder (e.g. `MINED`) as the workspace root, the terminal starts in `MINED` and gcpx will use `MINED/.gcpx.toml` if it exists — not `athenea/.gcpx.toml`. To use the config in a subfolder, either open that folder as the workspace root, or `cd` into it (the hook will then run and use that folder’s config).
 
 ### Privacy Mode (Quiet Flag)
 
