@@ -21,7 +21,8 @@ use crate::config::{
 /// 6. Updates the current context tracking
 ///
 /// If `quiet` is true, sensitive details (account, project, etc.) are hidden.
-pub fn switch_context(name: &str, quiet: bool) -> Result<()> {
+/// If `silent` is true, no output is printed (for use in shell hooks); errors still go to stderr.
+pub fn switch_context(name: &str, quiet: bool, silent: bool) -> Result<()> {
     validate_context_name(name)?;
     let stored_adc = get_context_adc_path(name)?;
 
@@ -36,18 +37,20 @@ pub fn switch_context(name: &str, quiet: bool) -> Result<()> {
     // Check if already on this context (fast file read)
     let current = get_current_tracking();
     if current == name {
-        println!("Already on context '{}'.", name);
-        // Still show the context info (unless quiet)
-        if !quiet {
-            if let Ok(Some(m)) = load_context_metadata(name) {
-                if let Some(acc) = &m.account {
-                    println!("  account: {}", acc);
-                }
-                if let Some(proj) = &m.project {
-                    println!("  project: {}", proj);
-                }
-                if let Some(kctx) = &m.kubectl_context {
-                    println!("  kubectl: {}", kctx);
+        if !silent {
+            println!("Already on context '{}'.", name);
+            // Still show the context info (unless quiet)
+            if !quiet {
+                if let Ok(Some(m)) = load_context_metadata(name) {
+                    if let Some(acc) = &m.account {
+                        println!("  account: {}", acc);
+                    }
+                    if let Some(proj) = &m.project {
+                        println!("  project: {}", proj);
+                    }
+                    if let Some(kctx) = &m.kubectl_context {
+                        println!("  kubectl: {}", kctx);
+                    }
                 }
             }
         }
@@ -62,7 +65,9 @@ pub fn switch_context(name: &str, quiet: bool) -> Result<()> {
         .unwrap_or(name); // Fall back to context name for backward compatibility
 
     // Activate gcloud configuration
-    println!("Switching to context '{}'...", name);
+    if !silent {
+        println!("Switching to context '{}'...", name);
+    }
     let status = Command::new("gcloud")
         .args(["config", "configurations", "activate", gcloud_config])
         .output()
@@ -96,17 +101,19 @@ pub fn switch_context(name: &str, quiet: bool) -> Result<()> {
     // Update tracking
     set_current_tracking(name)?;
 
-    println!("Switched to '{}' successfully!", name);
-    if !quiet {
-        if let Some(m) = &metadata {
-            if let Some(acc) = &m.account {
-                println!("  account: {}", acc);
-            }
-            if let Some(proj) = &m.project {
-                println!("  project: {}", proj);
-            }
-            if let Some(kctx) = &m.kubectl_context {
-                println!("  kubectl: {}", kctx);
+    if !silent {
+        println!("Switched to '{}' successfully!", name);
+        if !quiet {
+            if let Some(m) = &metadata {
+                if let Some(acc) = &m.account {
+                    println!("  account: {}", acc);
+                }
+                if let Some(proj) = &m.project {
+                    println!("  project: {}", proj);
+                }
+                if let Some(kctx) = &m.kubectl_context {
+                    println!("  kubectl: {}", kctx);
+                }
             }
         }
     }
@@ -114,18 +121,25 @@ pub fn switch_context(name: &str, quiet: bool) -> Result<()> {
 }
 
 /// Shows an interactive menu to select and switch contexts.
-pub fn interactive_switch(quiet: bool) -> Result<()> {
+///
+/// If `default_context` is set and matches a saved context, that context is
+/// pre-selected (e.g. from workspace config).
+pub fn interactive_switch(quiet: bool, default_context: Option<&str>) -> Result<()> {
     let contexts = list_contexts()?;
     if contexts.is_empty() {
         println!("No contexts found. Create one with 'gcpx save <name>'");
         return Ok(());
     }
 
+    let default_index = default_context
+        .and_then(|c| contexts.iter().position(|x| x == c))
+        .unwrap_or(0);
+
     let selection = Select::with_theme(&ColorfulTheme::default())
         .with_prompt("Select GCP Context")
-        .default(0)
+        .default(default_index)
         .items(&contexts)
         .interact()?;
 
-    switch_context(&contexts[selection], quiet)
+    switch_context(&contexts[selection], quiet, false)
 }
