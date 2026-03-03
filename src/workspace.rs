@@ -37,7 +37,9 @@ struct JsonWorkspaceConfig {
 /// or `None` if no config file is found.
 pub fn find_workspace_config(start_dir: &Path) -> Result<Option<(PathBuf, WorkspaceConfig)>> {
     let home = dirs::home_dir();
-    let mut current = start_dir.canonicalize().unwrap_or_else(|_| start_dir.to_path_buf());
+    let mut current = start_dir
+        .canonicalize()
+        .unwrap_or_else(|_| start_dir.to_path_buf());
 
     loop {
         for name in CONFIG_FILENAMES {
@@ -94,7 +96,10 @@ mod tests {
         let path = tmp.path().join(".gcpx.toml");
         fs::write(&path, "context = \"my-ctx\"\n").unwrap();
         let (dir, config) = find_workspace_config(tmp.path()).unwrap().unwrap();
-        assert!(dir.join(".gcpx.toml").exists(), "config should be in returned dir");
+        assert!(
+            dir.join(".gcpx.toml").exists(),
+            "config should be in returned dir"
+        );
         assert_eq!(config.context.as_deref(), Some("my-ctx"));
     }
 
@@ -106,7 +111,10 @@ mod tests {
         let path = tmp.path().join(".gcpx.toml");
         fs::write(&path, "context = \"project\"\n").unwrap();
         let (dir, config) = find_workspace_config(&sub).unwrap().unwrap();
-        assert!(dir.join(".gcpx.toml").exists(), "config should be in project root");
+        assert!(
+            dir.join(".gcpx.toml").exists(),
+            "config should be in project root"
+        );
         assert_eq!(config.context.as_deref(), Some("project"));
     }
 }

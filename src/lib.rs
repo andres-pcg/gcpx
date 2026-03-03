@@ -25,4 +25,4 @@ pub use commands::{
     switch_context,
 };
 pub use config::{ContextMetadata, get_current_tracking, list_contexts, validate_context_name};
-pub use workspace::{find_workspace_config, WorkspaceConfig};
+pub use workspace::{WorkspaceConfig, find_workspace_config};
