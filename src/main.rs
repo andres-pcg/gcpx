@@ -10,6 +10,8 @@ use gcpx::commands::{
     switch_context,
 };
 use gcpx::config::{get_current_tracking, list_contexts};
+use gcpx::workspace::find_workspace_config;
+use std::env;
 
 #[derive(Parser)]
 #[command(name = "gcpx")]
@@ -33,9 +35,15 @@ enum Commands {
     Switch {
         /// Context name (interactive if omitted)
         name: Option<String>,
+        /// Use context from workspace config (nearest .gcpx.toml)
+        #[arg(long)]
+        workspace: bool,
         /// Quiet mode - hide sensitive details (account, project, etc.)
         #[arg(short, long)]
         quiet: bool,
+        /// No output (for shell hooks; errors still to stderr)
+        #[arg(long)]
+        silent: bool,
     },
     /// Print the currently active context (for shell prompts)
     Current,
@@ -78,11 +86,39 @@ fn main() -> Result<()> {
 
     match cli.command {
         Some(Commands::Save { name, quiet }) => save_context(&name, quiet)?,
-        Some(Commands::Switch { name, quiet }) => {
+        Some(Commands::Switch {
+            name,
+            workspace,
+            quiet,
+            silent,
+        }) => {
             if let Some(n) = name {
-                switch_context(&n, quiet)?
+                switch_context(&n, quiet, silent)?
+            } else if workspace {
+                let cwd = env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+                match find_workspace_config(&cwd)? {
+                    Some((_dir, wc)) => {
+                        let ctx = wc.context.as_deref().ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "Workspace config has no 'context' set. Add context = \"<name>\" to .gcpx.toml"
+                            )
+                        })?;
+                        // Skip switch when already on this context (avoids extra I/O in silent mode)
+                        if silent && get_current_tracking() == ctx {
+                            return Ok(());
+                        }
+                        switch_context(ctx, quiet, silent)?
+                    }
+                    None => anyhow::bail!(
+                        "No workspace config found. Add a .gcpx.toml with 'context = \"<name>\"' in this directory or a parent."
+                    ),
+                }
             } else {
-                interactive_switch(quiet)?
+                let cwd = env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+                let default_ctx = find_workspace_config(&cwd)
+                    .ok()
+                    .and_then(|o| o.and_then(|(_, wc)| wc.context));
+                interactive_switch(quiet, default_ctx.as_deref())?
             }
         }
         Some(Commands::List) => {
@@ -120,7 +156,13 @@ fn main() -> Result<()> {
             let name = cmd.get_name().to_string();
             generate(shell, &mut cmd, name, &mut io::stdout());
         }
-        None => interactive_switch(false)?,
+        None => {
+            let cwd = env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let default_ctx = find_workspace_config(&cwd)
+                .ok()
+                .and_then(|o| o.and_then(|(_, wc)| wc.context));
+            interactive_switch(false, default_ctx.as_deref())?
+        }
     }
 
     Ok(())

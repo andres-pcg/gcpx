@@ -1,10 +1,22 @@
 //! Integration tests for gcpx.
 //!
-//! These tests use temporary directories to isolate test environments.
+//! These tests use temporary directories (GCPX_HOME, GCPX_GCLOUD_DIR) to isolate
+//! test environments. A global lock serializes these tests so env vars are not
+//! overwritten when tests run in parallel.
 
 use std::env;
 use std::fs;
+use std::sync::Mutex;
 use tempfile::TempDir;
+
+/// Lock held for the duration of any test that sets GCPX_* env vars.
+/// Without this, parallel test runs would overwrite each other's env and/or
+/// read the real user's ~/.config/gcpx.
+static TEST_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+fn test_env_guard() -> std::sync::MutexGuard<'static, ()> {
+    TEST_ENV_LOCK.lock().expect("test env mutex")
+}
 
 /// Helper to set up a test environment with temporary directories.
 struct TestEnv {
@@ -65,6 +77,7 @@ impl Drop for TestEnv {
 
 #[test]
 fn test_list_contexts_empty() {
+    let _guard = test_env_guard();
     let _env = TestEnv::new();
 
     let contexts = gcpx::list_contexts().expect("Failed to list contexts");
@@ -73,6 +86,7 @@ fn test_list_contexts_empty() {
 
 #[test]
 fn test_get_current_tracking_default() {
+    let _guard = test_env_guard();
     let _env = TestEnv::new();
 
     let current = gcpx::get_current_tracking();
@@ -81,6 +95,7 @@ fn test_get_current_tracking_default() {
 
 #[test]
 fn test_save_context_without_adc_fails() {
+    let _guard = test_env_guard();
     let _env = TestEnv::new();
 
     let result = gcpx::save_context("test-context", false);
@@ -95,6 +110,7 @@ fn test_save_context_without_adc_fails() {
 
 #[test]
 fn test_save_and_list_context() {
+    let _guard = test_env_guard();
     let env = TestEnv::new();
     env.create_fake_adc();
 
@@ -116,6 +132,7 @@ fn test_save_and_list_context() {
 
 #[test]
 fn test_context_exists() {
+    let _guard = test_env_guard();
     let env = TestEnv::new();
     env.create_fake_adc();
 
@@ -131,6 +148,7 @@ fn test_context_exists() {
 
 #[test]
 fn test_multiple_contexts() {
+    let _guard = test_env_guard();
     let env = TestEnv::new();
     env.create_fake_adc();
 
@@ -146,15 +164,17 @@ fn test_multiple_contexts() {
 
 #[test]
 fn test_switch_nonexistent_context_fails() {
+    let _guard = test_env_guard();
     let _env = TestEnv::new();
 
-    let result = gcpx::switch_context("nonexistent", false);
+    let result = gcpx::switch_context("nonexistent", false, false);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("not found"));
 }
 
 #[test]
 fn test_delete_context() {
+    let _guard = test_env_guard();
     let env = TestEnv::new();
     env.create_fake_adc();
 
@@ -168,6 +188,7 @@ fn test_delete_context() {
 
 #[test]
 fn test_delete_nonexistent_context_fails() {
+    let _guard = test_env_guard();
     let _env = TestEnv::new();
 
     let result = gcpx::delete_context("nonexistent", false);
@@ -177,6 +198,7 @@ fn test_delete_nonexistent_context_fails() {
 
 #[test]
 fn test_run_with_nonexistent_context_fails() {
+    let _guard = test_env_guard();
     let _env = TestEnv::new();
 
     let result = gcpx::run_with_context("nonexistent", &["echo".to_string(), "hello".to_string()]);
@@ -186,6 +208,7 @@ fn test_run_with_nonexistent_context_fails() {
 
 #[test]
 fn test_run_with_empty_command_fails() {
+    let _guard = test_env_guard();
     let env = TestEnv::new();
     env.create_fake_adc();
     gcpx::save_context("test-ctx", false).expect("Failed to save context");
@@ -197,6 +220,7 @@ fn test_run_with_empty_command_fails() {
 
 #[test]
 fn test_save_context_quiet_mode() {
+    let _guard = test_env_guard();
     let env = TestEnv::new();
     env.create_fake_adc();
 
@@ -223,16 +247,18 @@ fn test_save_context_quiet_mode() {
 
 #[test]
 fn test_switch_context_quiet_mode() {
+    let _guard = test_env_guard();
     let _env = TestEnv::new();
 
     // Switching to nonexistent context should fail the same way in quiet mode
-    let result = gcpx::switch_context("nonexistent", true);
+    let result = gcpx::switch_context("nonexistent", true, false);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("not found"));
 }
 
 #[test]
 fn test_validate_context_name_rejects_traversal() {
+    let _guard = test_env_guard();
     let _env = TestEnv::new();
 
     // Directory traversal attempts should be rejected
@@ -282,6 +308,7 @@ fn test_validate_context_name_accepts_valid() {
 fn test_adc_file_permissions() {
     use std::os::unix::fs::PermissionsExt;
 
+    let _guard = test_env_guard();
     let env = TestEnv::new();
     env.create_fake_adc();
 
