@@ -5,6 +5,7 @@ pub mod login;
 pub mod run;
 pub mod save;
 pub mod switch;
+pub mod use_cmd;
 
 pub use delete::delete_context;
 pub use login::login_context;

@@ -29,9 +29,12 @@ Managing multiple GCP accounts is painful:
 | **Login** | Re-authenticate and auto-save credentials |
 | **Delete** | Remove saved contexts |
 | **Completions** | Shell completion for bash, zsh, fish, powershell |
-| **kubectl** | Automatically saves and restores kubectl context |
+| **kubectl** | Automatically saves and restores kubectl context (with project validation) |
 | **Smart skip** | Skips switching if already on the requested context |
 | **Workspace config** | Pin a project to a context via `.gcpx.toml` (discovered from cwd and parents) |
+| **`use` (per-shell)** | `gcpx use <name>` activates a context in *this terminal only* — env-var based, no global mutation, so terminals can't collide |
+| **Shell integration** | `eval "$(gcpx init zsh\|bash\|fish)"` installs a `use` function and a `chpwd` auto-switch hook |
+| **Global default** | `gcpx default <name>` sets a fallback context for shells with no `.gcpx.toml` |
 
 ## Installation
 
@@ -94,12 +97,39 @@ gcpx current
 # Output: work
 ```
 
+### Per-shell context isolation (recommended)
+
+`gcpx switch` mutates `~/.config/gcloud/` globally, so switching in one terminal silently changes the context for every other open terminal. To avoid that, gcpx ships a shell integration that uses per-process **env vars** instead — each terminal is sealed off from every other.
+
+**One-time setup.** Add to your shell rc:
+
+```bash
+# ~/.zshrc
+eval "$(gcpx init zsh)"
+
+# ~/.bashrc
+eval "$(gcpx init bash)"
+
+# ~/.config/fish/config.fish
+gcpx init fish | source
+```
+
+That installs:
+- a `gcpx use <name>` shell function that exports `GOOGLE_APPLICATION_CREDENTIALS`, `CLOUDSDK_ACTIVE_CONFIG_NAME`, `KUBECONFIG`, and `GCPX_CONTEXT` for the current shell only;
+- a `chpwd` hook that auto-applies the context when you `cd` into a project with a `.gcpx.toml`.
+
+**Daily use:**
+
+```bash
+gcpx use work          # pin THIS shell to 'work'
+gcpx unuse             # drop the pin, re-resolve workspace/default
+gcpx default work      # fallback for shells with no workspace pin and no explicit use
+echo $GCPX_CONTEXT     # what is this shell on right now?
+```
+
+`gcpx switch` still exists and still mutates global state — kept for backwards compatibility, but `gcpx use` is the recommended path.
+
 ### Workspace / project-level config
-
-You can pin a project or workspace to a specific gcpx context so that:
-
-- **Interactive switch** (`gcpx` or `gcpx switch`) pre-selects that context in the menu.
-- **`gcpx switch --workspace`** switches directly to the context defined for the current project (no menu).
 
 Create a `.gcpx.toml` (or `.gcpx.json`) in the project root:
 
@@ -108,38 +138,26 @@ Create a `.gcpx.toml` (or `.gcpx.json`) in the project root:
 context = "work"
 ```
 
-gcpx discovers config by walking from the **current working directory** up through parent directories until it finds a config file or reaches your home directory. So from any subdirectory of the project, the same config applies.
+gcpx walks up from your **current working directory** to your home dir looking for this file. From any subdirectory of the project, the same config applies.
 
-**Auto-switch when you `cd` (or open a terminal):** Add a hook to your shell so that when you change directory (or when the prompt runs), gcpx switches to the workspace context automatically and silently. No need to run `gcpx switch --workspace` by hand.
+With the shell integration installed (above), the auto-switch hook runs on every `cd` and applies the workspace context automatically. You will see `gcpx: auto-switched to '<name>'` on stderr each time the context actually changes — credential swaps are never silent.
 
-| Shell | Add to your config |
-|-------|--------------------|
-| **Zsh** | `chpwd() { gcpx switch --workspace --silent 2>/dev/null }` (and run once when the shell starts: e.g. call it from `.zshrc` after defining it, or use a `precmd` that runs on first prompt) |
-| **Bash** | `PROMPT_COMMAND='gcpx switch --workspace --silent 2>/dev/null; '"$PROMPT_COMMAND"` |
-| **Fish** | `function __gcpx_auto_switch; gcpx switch --workspace --silent 2>/dev/null; end; add_prompt __gcpx_auto_switch` or run it in `fish_prompt` |
+**Resolution priority** (auto-switch hook):
 
-Example for **Zsh**:
+1. `gcpx use <name> --force` — sticky shell pin survives `cd`s
+2. Trusted workspace `.gcpx.toml` — wins over a non-force shell pin (project-level safety guard beats session pin)
+3. `gcpx use <name>` (non-force) — used outside any workspace
+4. `gcpx default <name>` — fallback when nothing else applies
 
-```bash
-# In ~/.zshrc
-gcpx_auto_switch() { gcpx switch --workspace --silent 2>/dev/null }
-autoload -U add-zsh-hook
-add-zsh-hook chpwd gcpx_auto_switch
-add-zsh-hook precmd gcpx_auto_switch
-```
+`gcpx use <name>` inside a directory pinned to something else is **refused** with a clear error. Re-run with `--force` to override for the lifetime of that shell only.
 
-Example for **Bash**:
+**Trust check:** the auto-switch hook refuses `.gcpx.toml` in world-writable directories without the sticky bit (e.g. `/tmp/...`). Override with `GCPX_TRUST_ALL_WORKSPACES=1` if you know what you're doing.
 
-```bash
-# In ~/.bashrc
-PROMPT_COMMAND="gcpx switch --workspace --silent 2>/dev/null; ${PROMPT_COMMAND:-true}"
-```
+**Important:** The config we use is the one in the **current working directory** (or the nearest parent that has a `.gcpx.toml`). So if you open your IDE with a **parent** folder (e.g. `MINED`) as the workspace root, the terminal starts in `MINED` and gcpx will use `MINED/.gcpx.toml` if it exists — not `athenea/.gcpx.toml`. To use the config in a subfolder, either open that folder as the workspace root, or `cd` into it (the hook will then run and use that folder's config).
 
-Optional: to avoid running gcpx on every prompt when you stay in the same directory, only run when the directory changes (e.g. in Zsh, guard with `if [[ "$(pwd)" != "$GCPX_LAST_CWD" ]]; then ...; GCPX_LAST_CWD=$(pwd); fi`).
+#### Legacy hook (still works, but superseded)
 
-When there’s no `.gcpx.toml` in the path, the command does nothing (and stderr is discarded), so it’s safe to use everywhere.
-
-**Important:** The config we use is the one in the **current working directory** (or the nearest parent that has a `.gcpx.toml`). So if you open your IDE with a **parent** folder (e.g. `MINED`) as the workspace root, the terminal starts in `MINED` and gcpx will use `MINED/.gcpx.toml` if it exists — not `athenea/.gcpx.toml`. To use the config in a subfolder, either open that folder as the workspace root, or `cd` into it (the hook will then run and use that folder’s config).
+If you previously installed a `chpwd`/`precmd` hook that calls `gcpx switch --workspace --silent`, you can keep it — it still works. The new `eval "$(gcpx init zsh)"` does everything that did, plus per-shell isolation. Switching is recommended.
 
 ### Privacy Mode (Quiet Flag)
 
@@ -174,6 +192,12 @@ gcpx run personal gcloud compute instances list
 
 # Run terraform with specific context
 gcpx run work terraform apply
+
+# Pipe-safe by default — no stdout banner
+gcpx run work gcloud compute instances list --format=json | jq '.[].name'
+
+# Add -v to print the "Running with context..." banner (to stderr)
+gcpx run -v work gcloud compute instances list
 ```
 
 ### Re-authenticate a Context
@@ -220,8 +244,11 @@ typeset -g POWERLEVEL9K_RIGHT_PROMPT_ELEMENTS=(
 ################################[ gcpx: GCP context from gcpx ]################################
 # Custom segment for gcpx - MUST be placed OUTSIDE the anonymous function
 function prompt_gcpx() {
-  local ctx=$(~/.cargo/bin/gcpx current 2>/dev/null)
-  if [[ -n "$ctx" && "$ctx" != "none" ]]; then
+  # Reads the per-shell env var set by `gcpx use` / the auto-switch hook —
+  # faster than shelling out to `gcpx current` on every prompt, and shows
+  # this shell's actual context (not a global).
+  local ctx="${GCPX_CONTEXT:-}"
+  if [[ -n "$ctx" ]]; then
     p10k segment -f 33 -i '☁' -t "$ctx"
   fi
 }
@@ -242,8 +269,8 @@ Add to your `~/.zshrc` after Oh-My-Zsh is loaded:
 ```bash
 # GCP context in prompt
 gcpx_prompt_info() {
-    local ctx=$(gcpx current 2>/dev/null)
-    if [[ -n "$ctx" && "$ctx" != "none" ]]; then
+    local ctx="${GCPX_CONTEXT:-}"
+    if [[ -n "$ctx" ]]; then
         echo "%{$fg[cyan]%}☁ $ctx%{$reset_color%} "
     fi
 }
@@ -331,9 +358,16 @@ gcpx completions powershell > gcpx.ps1
 
 When you `gcpx save <name>`:
 1. Captures your current gcloud config name, account, and project
-2. Captures your current kubectl context (if kubectl is installed)
+2. Captures your current kubectl context (if kubectl is installed) and validates it matches the gcloud project
 3. Copies ADC credentials to the context directory
 4. Saves metadata so switching works even if context name differs from gcloud config
+
+**Kubectl validation**: When saving, gcpx checks if your kubectl context belongs to the same GCP project. For GKE clusters (contexts like `gke_<project>_<region>_<cluster>`), it extracts the project and compares it with your active gcloud project. If they don't match, you'll be prompted to choose:
+- Save without kubectl context
+- Save with the mismatched kubectl context anyway
+- Cancel
+
+Use `--no-kubectl` to skip saving kubectl context entirely, or `--force` to skip validation (useful in scripts).
 
 When you `gcpx switch <name>`:
 1. Checks if already on the requested context (skips if so - saves time!)

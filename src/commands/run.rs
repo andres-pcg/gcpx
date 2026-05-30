@@ -15,7 +15,11 @@ use crate::config::{
 /// - `CLOUDSDK_ACTIVE_CONFIG_NAME`: Sets the gcloud configuration name
 ///
 /// The current shell's context is not affected.
-pub fn run_with_context(context_name: &str, cmd: &[String]) -> Result<()> {
+///
+/// `verbose` prints a one-line banner to **stderr** (never stdout) describing
+/// the wrapped invocation. Off by default so that piping the wrapped command's
+/// stdout (e.g. `gcpx run x gcloud ... --format=json | jq`) stays clean.
+pub fn run_with_context(context_name: &str, cmd: &[String], verbose: bool) -> Result<()> {
     validate_context_name(context_name)?;
     if cmd.is_empty() {
         bail!("No command specified. Usage: gcpx run <context> -- <command>");
@@ -41,12 +45,14 @@ pub fn run_with_context(context_name: &str, cmd: &[String]) -> Result<()> {
     let program = &cmd[0];
     let args = &cmd[1..];
 
-    println!(
-        "Running with context '{}': {} {}",
-        context_name,
-        program,
-        args.join(" ")
-    );
+    if verbose {
+        eprintln!(
+            "Running with context '{}': {} {}",
+            context_name,
+            program,
+            args.join(" ")
+        );
+    }
 
     let status = Command::new(program)
         .args(args)

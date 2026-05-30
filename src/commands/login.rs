@@ -75,9 +75,9 @@ pub fn login_context(name: &str, quiet: bool) -> Result<()> {
         println!("Warning: ADC authentication may not have completed successfully.");
     }
 
-    // Save the context
+    // Save the context (with kubectl validation)
     println!("\nSaving credentials to context '{}'...", name);
-    save_context(name, quiet)?;
+    save_context(name, quiet, false, false)?;
 
     println!("\nLogin complete! Context '{}' is now ready to use.", name);
     Ok(())

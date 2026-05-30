@@ -11,7 +11,58 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Returns true when test-only env overrides (GCPX_HOME, GCPX_GCLOUD_DIR) are allowed.
+///
+/// Honored only when GCPX_ALLOW_TEST_ENV=1 is also set. This prevents an attacker
+/// who can poison a victim's environment from redirecting credential storage to
+/// an attacker-controlled directory.
+fn test_env_allowed() -> bool {
+    env::var("GCPX_ALLOW_TEST_ENV").as_deref() == Ok("1")
+}
+
+/// Atomically create a file with mode 0600 and write bytes to it. On Unix the
+/// file is opened with O_CREAT | O_EXCL and mode 0600 in one syscall so the
+/// secret never appears with a wider permission, even briefly.
+///
+/// If `path` already exists it is unlinked first (we are overwriting a secret
+/// we own). Parent directory must exist.
+pub fn write_secret(path: &Path, content: &[u8]) -> Result<()> {
+    if path.exists() {
+        fs::remove_file(path).with_context(|| format!("removing existing {:?}", path))?;
+    }
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut f = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(path)
+            .with_context(|| format!("creating {:?}", path))?;
+        f.write_all(content)
+            .with_context(|| format!("writing {:?}", path))?;
+    }
+    #[cfg(not(unix))]
+    {
+        fs::write(path, content)?;
+    }
+    Ok(())
+}
+
+/// Ensure a directory exists with mode 0700 on Unix.
+pub fn ensure_dir_0700(path: &Path) -> Result<()> {
+    fs::create_dir_all(path).with_context(|| format!("creating dir {:?}", path))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = fs::Permissions::from_mode(0o700);
+        fs::set_permissions(path, perms).with_context(|| format!("chmod 0700 {:?}", path))?;
+    }
+    Ok(())
+}
 
 /// Validates a context name to prevent directory traversal and invalid names.
 ///
@@ -62,8 +113,10 @@ pub fn get_home() -> Result<PathBuf> {
 /// Returns the gcloud configuration directory (~/.config/gcloud).
 /// Can be overridden with GCPX_GCLOUD_DIR environment variable for testing.
 pub fn get_gcloud_dir() -> Result<PathBuf> {
-    if let Ok(dir) = env::var("GCPX_GCLOUD_DIR") {
-        return Ok(PathBuf::from(dir));
+    if test_env_allowed() {
+        if let Ok(dir) = env::var("GCPX_GCLOUD_DIR") {
+            return Ok(PathBuf::from(dir));
+        }
     }
     Ok(get_home()?.join(".config").join("gcloud"))
 }
@@ -72,14 +125,16 @@ pub fn get_gcloud_dir() -> Result<PathBuf> {
 /// Creates the directory if it doesn't exist.
 /// Can be overridden with GCPX_HOME environment variable for testing.
 pub fn get_store_dir() -> Result<PathBuf> {
-    let path = if let Ok(dir) = env::var("GCPX_HOME") {
-        PathBuf::from(dir)
+    let path = if test_env_allowed() {
+        if let Ok(dir) = env::var("GCPX_HOME") {
+            PathBuf::from(dir)
+        } else {
+            get_home()?.join(".config").join("gcpx")
+        }
     } else {
         get_home()?.join(".config").join("gcpx")
     };
-    if !path.exists() {
-        fs::create_dir_all(&path)?;
-    }
+    ensure_dir_0700(&path)?;
     Ok(path)
 }
 
@@ -101,6 +156,13 @@ pub fn get_context_dir(name: &str) -> Result<PathBuf> {
 /// Returns the path to a context's metadata file.
 pub fn get_context_metadata_path(name: &str) -> Result<PathBuf> {
     Ok(get_store_dir()?.join(name).join("metadata.json"))
+}
+
+/// Returns the path to a context's snapshot kubeconfig file.
+/// This is exported as `KUBECONFIG` by `gcpx use` so each shell gets isolated
+/// kubectl state without touching `~/.kube/config`.
+pub fn get_context_kube_path(name: &str) -> Result<PathBuf> {
+    Ok(get_store_dir()?.join(name).join("kube.config"))
 }
 
 /// Saves context metadata.
@@ -204,6 +266,22 @@ pub fn get_current_kubectl_context() -> Option<String> {
     }
 }
 
+/// Extracts the GCP project ID from a GKE kubectl context name.
+///
+/// GKE contexts follow the pattern: `gke_<project>_<region>_<cluster>`
+/// Returns `None` for non-GKE contexts (e.g., minikube, kind, custom contexts).
+pub fn extract_project_from_kubectl_context(context: &str) -> Option<String> {
+    if context.starts_with("gke_") {
+        context
+            .split('_')
+            .nth(1)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+    } else {
+        None
+    }
+}
+
 /// Switches kubectl context. Returns Ok(true) if switched, Ok(false) if kubectl not available.
 pub fn switch_kubectl_context(context: &str) -> Result<bool> {
     let status = std::process::Command::new("kubectl")
@@ -291,5 +369,49 @@ mod tests {
         let home = get_home().unwrap();
         let gcloud = get_gcloud_dir().unwrap();
         assert!(gcloud.starts_with(&home));
+    }
+
+    #[test]
+    fn test_extract_project_from_gke_context() {
+        // Standard GKE context format
+        assert_eq!(
+            extract_project_from_kubectl_context("gke_my-project_us-east1_my-cluster"),
+            Some("my-project".to_string())
+        );
+
+        // Project with hyphens
+        assert_eq!(
+            extract_project_from_kubectl_context("gke_my-gcp-project-123_us-central1-a_cluster"),
+            Some("my-gcp-project-123".to_string())
+        );
+
+        // Real-world example
+        assert_eq!(
+            extract_project_from_kubectl_context("gke_indexa-core_us-east1_gravitee"),
+            Some("indexa-core".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_project_from_non_gke_context() {
+        // Non-GKE contexts should return None
+        assert_eq!(extract_project_from_kubectl_context("minikube"), None);
+        assert_eq!(extract_project_from_kubectl_context("kind-kind"), None);
+        assert_eq!(extract_project_from_kubectl_context("docker-desktop"), None);
+        assert_eq!(
+            extract_project_from_kubectl_context("my-custom-context"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_extract_project_from_malformed_gke_context() {
+        // Starts with gke_ but missing parts
+        assert_eq!(extract_project_from_kubectl_context("gke_"), None);
+        // Only prefix, no project
+        assert_eq!(
+            extract_project_from_kubectl_context("gke_project"),
+            Some("project".to_string())
+        );
     }
 }
