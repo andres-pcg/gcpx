@@ -16,9 +16,16 @@ use crate::config::{
 ///
 /// The current shell's context is not affected.
 ///
-/// `verbose` prints a one-line banner to **stderr** (never stdout) describing
-/// the wrapped invocation. Off by default so that piping the wrapped command's
-/// stdout (e.g. `gcpx run x gcloud ... --format=json | jq`) stays clean.
+/// `verbose` prints a one-line banner to **stdout** describing the wrapped
+/// invocation. Off by default so that piping the wrapped command's stdout
+/// (e.g. `gcpx run x gcloud ... --format=json | jq`) stays clean.
+///
+/// The banner is intentionally on stdout (not stderr) so that when this
+/// command is used inside a CI job that ships output to a log aggregator
+/// (e.g. GCP Cloud Logging, which maps stderr → ERROR severity by default),
+/// the informational banner doesn't get flagged as an error. Users who opt
+/// into `-v` while piping accept that the banner will appear in the pipe,
+/// just like `curl -v`.
 pub fn run_with_context(context_name: &str, cmd: &[String], verbose: bool) -> Result<()> {
     validate_context_name(context_name)?;
     if cmd.is_empty() {
@@ -46,7 +53,7 @@ pub fn run_with_context(context_name: &str, cmd: &[String], verbose: bool) -> Re
     let args = &cmd[1..];
 
     if verbose {
-        eprintln!(
+        println!(
             "Running with context '{}': {} {}",
             context_name,
             program,

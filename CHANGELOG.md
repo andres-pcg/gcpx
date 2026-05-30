@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **`gcpx run` no longer prints a stdout banner.** The `Running with context...` line broke pipes (e.g. `gcpx run x gcloud ... --format=json | jq`). It is now silent by default; pass `-v`/`--verbose` to print the banner to **stderr**.
+- **`gcpx run` no longer prints a banner by default.** The `Running with context...` line broke pipes (e.g. `gcpx run x gcloud ... --format=json | jq`). It is now silent by default; pass `-v`/`--verbose` to print the banner to **stdout** (intentionally not stderr — GCP Cloud Logging and similar log aggregators map stderr to ERROR severity by default, and the banner is informational, not an error).
 
 ### Security
 

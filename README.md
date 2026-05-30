@@ -196,7 +196,9 @@ gcpx run work terraform apply
 # Pipe-safe by default — no stdout banner
 gcpx run work gcloud compute instances list --format=json | jq '.[].name'
 
-# Add -v to print the "Running with context..." banner (to stderr)
+# Add -v to print the "Running with context..." banner (to stdout)
+# stdout (not stderr) so CI log aggregators like GCP Cloud Logging
+# don't flag the informational banner as an ERROR-severity event.
 gcpx run -v work gcloud compute instances list
 ```
 
