@@ -1,6 +1,6 @@
 //! Login command implementation - re-authenticate and save credentials.
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use std::process::Command;
 
 use crate::commands::save::save_context;
@@ -10,9 +10,8 @@ use crate::config::validate_context_name;
 ///
 /// This function:
 /// 1. Activates or creates the gcloud configuration
-/// 2. Runs `gcloud auth login` for browser-based authentication
-/// 3. Runs `gcloud auth application-default login` for ADC
-/// 4. Auto-saves the credentials to the context
+/// 2. Runs `gcloud auth login --update-adc` (one browser flow for gcloud + ADC)
+/// 3. Auto-saves the credentials to the context
 ///
 /// If `quiet` is true, sensitive details are hidden after save.
 pub fn login_context(name: &str, quiet: bool) -> Result<()> {
@@ -49,35 +48,23 @@ pub fn login_context(name: &str, quiet: bool) -> Result<()> {
         }
     }
 
-    // Run gcloud auth login (interactive, opens browser)
-    println!("\nStarting gcloud authentication...");
+    // One browser flow for both gcloud and ADC: --update-adc writes the same
+    // grant to the ADC file, instead of a second `application-default login`.
+    println!("\nStarting gcloud authentication (gcloud + ADC)...");
     println!("A browser window will open for you to sign in.\n");
 
     let auth_status = Command::new("gcloud")
-        .args(["auth", "login"])
+        .args(["auth", "login", "--update-adc"])
         .status()
         .context("Failed to run gcloud auth login")?;
 
     if !auth_status.success() {
-        println!("Warning: gcloud auth login may not have completed successfully.");
+        bail!("gcloud auth login did not complete; nothing was saved.");
     }
 
-    // Run gcloud auth application-default login
-    println!("\nStarting Application Default Credentials authentication...");
-    println!("Another browser window will open.\n");
-
-    let adc_status = Command::new("gcloud")
-        .args(["auth", "application-default", "login"])
-        .status()
-        .context("Failed to run gcloud auth application-default login")?;
-
-    if !adc_status.success() {
-        println!("Warning: ADC authentication may not have completed successfully.");
-    }
-
-    // Save the context
+    // Save the context (with kubectl validation)
     println!("\nSaving credentials to context '{}'...", name);
-    save_context(name, quiet)?;
+    save_context(name, quiet, false, false)?;
 
     println!("\nLogin complete! Context '{}' is now ready to use.", name);
     Ok(())
