@@ -16,7 +16,7 @@ use crate::config::{
 /// Sanitize untrusted strings before printing — strip ASCII control chars
 /// (including ESC) so a malicious kubectl context name can't inject terminal
 /// escape sequences into the user's terminal.
-fn sanitize_for_display(s: &str) -> String {
+pub(crate) fn sanitize_for_display(s: &str) -> String {
     s.chars()
         .map(|c| if c.is_ascii_control() { '?' } else { c })
         .collect()

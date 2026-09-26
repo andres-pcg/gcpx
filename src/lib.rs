@@ -15,6 +15,7 @@
 //! automatically when switching, eliminating the need for repeated
 //! `gcloud auth application-default login`.
 
+pub mod auth;
 pub mod commands;
 pub mod config;
 pub mod init;

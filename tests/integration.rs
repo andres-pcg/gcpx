@@ -35,6 +35,8 @@ impl TestEnv {
             env::set_var("GCPX_ALLOW_TEST_ENV", "1");
             env::set_var("GCPX_HOME", gcpx_dir.path());
             env::set_var("GCPX_GCLOUD_DIR", gcloud_dir.path());
+            // No network/gcloud probes from `use`/`switch` in tests.
+            env::set_var("GCPX_NO_AUTH_CHECK", "1");
         }
 
         TestEnv {
@@ -73,6 +75,7 @@ impl Drop for TestEnv {
             env::remove_var("GCPX_HOME");
             env::remove_var("GCPX_GCLOUD_DIR");
             env::remove_var("GCPX_ALLOW_TEST_ENV");
+            env::remove_var("GCPX_NO_AUTH_CHECK");
         }
     }
 }

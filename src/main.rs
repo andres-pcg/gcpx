@@ -6,8 +6,8 @@ use clap_complete::{Shell, generate};
 use std::io;
 
 use gcpx::commands::{
-    delete_context, interactive_switch, login_context, run_with_context, save_context,
-    switch_context,
+    ReauthOptions, delete_context, interactive_switch, login_context, reauth, run_with_context,
+    save_context, status, switch_context,
     use_cmd::{
         Shell as GcpxShell, clear_default, export_auto, export_unuse, export_use, read_default,
         set_default, show_default,
@@ -86,6 +86,29 @@ enum Commands {
         /// Quiet mode - hide sensitive details (account, project, etc.)
         #[arg(short, long)]
         quiet: bool,
+    },
+    /// Show credential health (gcloud session + ADC) for saved contexts
+    Status {
+        /// Context name (all contexts if omitted)
+        name: Option<String>,
+    },
+    /// Refresh expired sessions (Google's 16h session control) for contexts
+    ///
+    /// Only touches what is stale. gcloud reauth uses the terminal password
+    /// prompt when your organisation allows it, otherwise the browser.
+    Reauth {
+        /// Context name(s)
+        #[arg(required_unless_present = "all", conflicts_with = "all")]
+        names: Vec<String>,
+        /// Every saved context that needs it
+        #[arg(long)]
+        all: bool,
+        /// Also refresh ADC (Terraform, client libraries) — same browser trip
+        #[arg(long)]
+        adc: bool,
+        /// Re-login even if credentials look valid
+        #[arg(long)]
+        force: bool,
     },
     /// Generate shell completions
     Completions {
@@ -210,6 +233,17 @@ fn main() -> Result<()> {
         }
         Some(Commands::Login { name, quiet }) => {
             login_context(&name, quiet)?;
+        }
+        Some(Commands::Status { name }) => {
+            status(name.as_deref())?;
+        }
+        Some(Commands::Reauth {
+            names,
+            all,
+            adc,
+            force,
+        }) => {
+            reauth(&names, all, ReauthOptions { adc, force })?;
         }
         Some(Commands::Completions { shell }) => {
             let mut cmd = Cli::command();

@@ -26,7 +26,9 @@ Managing multiple GCP accounts is painful:
 | **Switch** | Instantly switch between contexts (gcloud + ADC + kubectl) |
 | **List** | View all saved contexts with active indicator |
 | **Run** | Execute commands with a specific context (isolated) |
-| **Login** | Re-authenticate and auto-save credentials |
+| **Login** | Authenticate (one browser flow for gcloud + ADC) and auto-save |
+| **Status** | Show which contexts have expired sessions (Google's 16h session control) |
+| **Reauth** | Refresh only what expired — password prompt when allowed, ADC opt-in with `--adc` |
 | **Delete** | Remove saved contexts |
 | **Completions** | Shell completion for bash, zsh, fish, powershell |
 | **kubectl** | Automatically saves and restores kubectl context (with project validation) |
@@ -202,10 +204,29 @@ gcpx run work gcloud compute instances list --format=json | jq '.[].name'
 gcpx run -v work gcloud compute instances list
 ```
 
-### Re-authenticate a Context
+### Expired sessions (Google Cloud session control)
+
+Google Cloud now expires sessions for human users after **16 hours by default** (session control / reauthentication policy). Stored credentials keep existing, but Google refuses to refresh them (`invalid_rapt` / `rapt_required`) until you re-authenticate. gcpx detects this and fixes only what is stale.
 
 ```bash
-# Opens browser for auth, then auto-saves
+gcpx status              # health of every context (gcloud session + ADC)
+gcpx status work         # one context; exits non-zero if gcloud needs reauth
+
+gcpx reauth work         # refresh the gcloud session for 'work'
+gcpx reauth --all        # every context that needs it (one sign-in per account)
+gcpx reauth work --adc   # also refresh ADC (Terraform, client libraries)
+```
+
+- **gcloud session** — `reauth` runs `gcloud auth login <account>` inside the context's gcloud configuration. If your organisation allows password reauthentication, you just type your password in the terminal; otherwise gcloud opens the browser.
+- **ADC is opt-in (`--adc`)** — only needed for tools that use Application Default Credentials (Terraform, client libraries). ADC always gets a fresh browser sign-in (a password reauth isn't usable by most client libraries), obtained in the *same* browser trip as gcloud via `--update-adc`. gcpx saves it into the context and leaves the global ADC file as it was.
+- **No-browser ADC recovery** — if you already ran `gcloud auth application-default login` yourself, `reauth --adc` adopts that credential instead of opening a browser, but **only** when Google confirms it belongs to the context's saved account. A credential for any other account is never adopted.
+- **Account mismatches** — if a context's gcloud configuration was changed to a different account, `status` flags it and `reauth` asks before pointing it back to the context's saved account.
+- Explicit `gcpx use` / `gcpx switch` print a one-line warning when the context's session has expired (set `GCPX_NO_AUTH_CHECK=1` to disable). The `cd` auto-switch hook never does network checks.
+
+### Re-authenticate a Context from scratch
+
+```bash
+# One browser flow for gcloud + ADC, then auto-saves
 gcpx login work
 ```
 

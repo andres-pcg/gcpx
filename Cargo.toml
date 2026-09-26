@@ -1,6 +1,6 @@
 [package]
 name = "gcpx"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.85"
 authors = ["Andrés Rodríguez"]
@@ -20,6 +20,9 @@ dialoguer = "0.12"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.8"
+ureq = "3"
+base64 = "0.22"
 
 [dev-dependencies]
+base64 = "0.22"
 tempfile = "3.15"

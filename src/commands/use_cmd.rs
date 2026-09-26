@@ -170,6 +170,9 @@ pub fn export_use(name: Option<&str>, force: bool, shell: Shell) -> Result<Strin
     }
 
     let mut ops = ops_for_context(&target)?;
+    // Explicit `use` only — the chpwd hook (export_auto) must stay fast and
+    // offline. Warnings go to stderr; stdout is eval'd by the shell.
+    crate::auth::warn_if_stale(&target);
     ops.push(Op::Set("GCPX_SHELL_PIN", target.clone()));
     if force {
         ops.push(Op::Set("GCPX_SHELL_PIN_FORCE", "1".to_string()));

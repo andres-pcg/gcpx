@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-25
+
+### Added — expired sessions (Google Cloud session control)
+
+- **`gcpx status [name]`** — checks each context's gcloud session and stored ADC against Google and reports `ok` / `reauth required` / `revoked`, plus account mismatches (gcloud config or ADC pointing at a different account than the context was saved for). Exits non-zero when a gcloud session needs reauth.
+- **`gcpx reauth <names…> | --all [--adc] [--force]`** — refreshes only what is stale. gcloud reauth runs inside the context's configuration (password prompt in the terminal when the org allows it, browser otherwise). `--adc` also refreshes ADC in the same browser trip (`--update-adc`), stores it in the context and restores the global ADC. One sign-in per account per run.
+- **Safe ADC adoption** — a working ADC already at gcloud's well-known path is adopted into a context without a browser, only when Google confirms it's the context's saved account.
+- Explicit `gcpx use` / `gcpx switch` warn on stderr when the context's session has expired (`GCPX_NO_AUTH_CHECK=1` disables).
+
+### Changed
+
+- **`gcpx login`** uses a single browser flow (`gcloud auth login --update-adc`) instead of two, and no longer saves the context when the login fails.
+
 ## [0.3.0] - 2026-05-27
 
 ### Added — per-shell context isolation (major)

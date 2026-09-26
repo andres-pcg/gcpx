@@ -116,6 +116,7 @@ pub fn switch_context(name: &str, quiet: bool, silent: bool) -> Result<()> {
                 }
             }
         }
+        crate::auth::warn_if_stale(name);
     }
     Ok(())
 }
