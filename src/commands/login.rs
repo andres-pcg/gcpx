@@ -187,7 +187,7 @@ fn set_adc_quota_project(name: &str, project: &str) {
 /// one, type one, or skip.
 fn prompt_project(theme: &ColorfulTheme, name: &str) -> Result<Option<String>> {
     println!("\nFetching your projects...");
-    let projects: Vec<String> = Command::new("gcloud")
+    let listed = Command::new("gcloud")
         .args([
             "projects",
             "list",
@@ -197,7 +197,9 @@ fn prompt_project(theme: &ColorfulTheme, name: &str) -> Result<Option<String>> {
         .env("CLOUDSDK_ACTIVE_CONFIG_NAME", name)
         .output()
         .ok()
-        .filter(|o| o.status.success())
+        .filter(|o| o.status.success());
+    let projects: Vec<String> = listed
+        .as_ref()
         .map(|o| {
             String::from_utf8_lossy(&o.stdout)
                 .lines()
@@ -207,6 +209,11 @@ fn prompt_project(theme: &ColorfulTheme, name: &str) -> Result<Option<String>> {
                 .collect()
         })
         .unwrap_or_default();
+    if listed.is_none() {
+        println!("Couldn't list your projects; you can type a project ID or skip.");
+    } else if projects.is_empty() {
+        println!("This account can't see any projects; you can type a project ID or skip.");
+    }
 
     const TYPE_IT: &str = "[enter a project ID]";
     const SKIP: &str = "[skip — no default project]";
