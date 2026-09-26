@@ -16,7 +16,7 @@ Managing multiple GCP accounts is painful:
 
 ## The Solution
 
-`gcpx` saves separate ADC credentials for each account and swaps them automatically when switching. No more re-authentication!
+`gcpx` keeps a separate context (gcloud configuration + ADC + kubectl) per account and lets each terminal use its own — no re-logging in just to switch accounts. When Google's session limit expires a login, `gcpx status` tells you which ones and `gcpx reauth` refreshes only those.
 
 ## Features
 
@@ -26,7 +26,7 @@ Managing multiple GCP accounts is painful:
 | **Switch** | Instantly switch between contexts (gcloud + ADC + kubectl) |
 | **List** | View all saved contexts with active indicator |
 | **Run** | Execute commands with a specific context (isolated) |
-| **Login** | Authenticate (one browser flow for gcloud + ADC) and auto-save |
+| **Login** | Guided setup: name the context, sign in once (gcloud + ADC), pick a project, save |
 | **Status** | Show which contexts have expired sessions (Google's 16h session control) |
 | **Reauth** | Refresh only what expired — password prompt when allowed, ADC opt-in with `--adc` |
 | **Delete** | Remove saved contexts |
@@ -57,47 +57,71 @@ brew install gcpx
 
 Download the latest binary from the [Releases](https://github.com/andres-pcg/gcpx/releases) page.
 
-## Quick Start
+## Getting Started
 
-### Initial Setup
+You need the [gcloud CLI](https://cloud.google.com/sdk/docs/install). `kubectl` is optional.
 
-```bash
-# Authenticate with your first account
-gcloud auth login
-gcloud auth application-default login
+### 1. Install the shell integration
 
-# Save it as a context
-gcpx save work
-
-# Authenticate with another account
-gcloud config configurations create personal
-gcloud auth login
-gcloud auth application-default login
-
-# Save it too
-gcpx save personal
-```
-
-### Daily Usage
+Add this to your shell's rc file, then open a new terminal:
 
 ```bash
-# Switch between accounts instantly (no re-auth!)
-gcpx switch work
-gcpx switch personal
+# ~/.zshrc
+eval "$(gcpx init zsh)"
 
-# Or use interactive mode
-gcpx
+# ~/.bashrc
+eval "$(gcpx init bash)"
 
-# List all contexts
-gcpx list
-# Output:
-# * work (active)
-#   personal
-
-# Check current context
-gcpx current
-# Output: work
+# ~/.config/fish/config.fish
+gcpx init fish | source
 ```
+
+This gives you `gcpx use`, which switches accounts **per terminal** instead of globally. See [Per-shell context isolation](#per-shell-context-isolation-recommended).
+
+### 2. Create a context for each account
+
+```bash
+gcpx login
+```
+
+The guided setup:
+
+1. asks for a **context name** — use whatever identifies the account for you (a client, a team, `personal`, …);
+2. opens the browser **once** to sign in (gcloud and Application Default Credentials together);
+3. lists the projects your account can access so you can **pick a default project** (or type one, or skip);
+4. saves the context and offers to make it your **default** if you don't have one yet.
+
+Repeat `gcpx login` for every other account. To script it instead, pass everything as arguments:
+
+```bash
+gcpx login <context> --project <project-id>
+```
+
+Already signed in with gcloud? Save the active configuration as it is with `gcpx save <context>`.
+
+### 3. Choose which context applies where
+
+```bash
+gcpx default <context>                        # fallback for new terminals
+echo 'context = "<context>"' > .gcpx.toml     # pin a repository to a context
+gcpx use <context>                            # this terminal only
+```
+
+A `.gcpx.toml` is picked up automatically when you `cd` into the directory (or any subdirectory).
+
+### 4. Day to day
+
+```bash
+gcpx current            # which context is this terminal on?
+gcpx list               # all contexts
+gcpx status             # any expired sessions?
+gcpx reauth --all       # refresh expired gcloud sessions
+gcpx reauth --all --adc # …and ADC, if you use Terraform or client libraries
+```
+
+Google Cloud expires sessions after 16 hours by default, so expect to run `gcpx reauth` about once a day. See [Expired sessions](#expired-sessions-google-cloud-session-control).
+
+## Usage
 
 ### Per-shell context isolation (recommended)
 
@@ -226,8 +250,8 @@ gcpx reauth work --adc   # also refresh ADC (Terraform, client libraries)
 ### Re-authenticate a Context from scratch
 
 ```bash
-# One browser flow for gcloud + ADC, then auto-saves
-gcpx login work
+# Sign in again (one browser flow for gcloud + ADC) and re-save the context
+gcpx login <context>
 ```
 
 ### Delete a Context

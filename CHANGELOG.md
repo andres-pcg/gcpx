@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Guided `gcpx login`** — run without arguments to set up a context step by step: it asks for the context name, signs in once (gcloud + ADC), lists the account's projects in a searchable picker (or lets you type one / skip), saves, and offers to make it the default context. `gcpx login <name> --project <id>` does the same non-interactively.
+
+### Changed
+
+- README: new **Getting Started** guide (shell integration → `gcpx login` → defaults / workspace pins → day-to-day `status` / `reauth`).
+
 ## [0.4.0] - 2026-09-25
 
 ### Added — expired sessions (Google Cloud session control)
