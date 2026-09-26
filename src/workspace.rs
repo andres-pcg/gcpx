@@ -18,6 +18,55 @@ pub struct WorkspaceConfig {
     pub context: Option<String>,
 }
 
+/// Heuristic trust check for a directory containing a `.gcpx.toml`.
+///
+/// Returns false if the directory itself or any ancestor up to (but not
+/// including) the user's home is world-writable without the sticky bit. The
+/// auto-switch hook runs this on `chpwd`, so a `cd /tmp/attacker/repo` should
+/// NOT silently re-point credentials based on an attacker-dropped config.
+///
+/// Directories under the user's home are trusted by default (the user owns
+/// them). Trust can also be bypassed entirely with GCPX_TRUST_ALL_WORKSPACES=1
+/// for users who know what they're doing.
+pub fn is_trusted_workspace(dir: &Path) -> bool {
+    if std::env::var("GCPX_TRUST_ALL_WORKSPACES").as_deref() == Ok("1") {
+        return true;
+    }
+    let home = dirs::home_dir();
+    let canonical = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+
+    // Under $HOME → trusted (user owns it).
+    if let Some(ref h) = home {
+        if canonical.starts_with(h) {
+            return true;
+        }
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // Walk from canonical up to /, refusing if any component is world-writable
+        // without the sticky bit (i.e. anyone can replace it).
+        let mut cur: Option<&Path> = Some(&canonical);
+        while let Some(p) = cur {
+            if let Ok(meta) = std::fs::metadata(p) {
+                let mode = meta.permissions().mode();
+                let world_writable = mode & 0o002 != 0;
+                let sticky = mode & 0o1000 != 0;
+                if world_writable && !sticky {
+                    return false;
+                }
+            }
+            cur = p.parent();
+        }
+        true
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
 /// Raw shape of `.gcpx.toml` (TOML).
 #[derive(Debug, Deserialize)]
 struct TomlWorkspaceConfig {

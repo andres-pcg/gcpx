@@ -8,8 +8,13 @@ use std::io;
 use gcpx::commands::{
     delete_context, interactive_switch, login_context, run_with_context, save_context,
     switch_context,
+    use_cmd::{
+        Shell as GcpxShell, clear_default, export_auto, export_unuse, export_use, read_default,
+        set_default, show_default,
+    },
 };
 use gcpx::config::{get_current_tracking, list_contexts};
+use gcpx::init::snippet as init_snippet;
 use gcpx::workspace::find_workspace_config;
 use std::env;
 
@@ -30,6 +35,12 @@ enum Commands {
         /// Quiet mode - hide sensitive details (account, project, etc.)
         #[arg(short, long)]
         quiet: bool,
+        /// Skip saving kubectl context
+        #[arg(long)]
+        no_kubectl: bool,
+        /// Skip kubectl validation (save as-is, for automation)
+        #[arg(long)]
+        force: bool,
     },
     /// Switch to a saved context
     Switch {
@@ -53,6 +64,9 @@ enum Commands {
     Run {
         /// Context name to use
         name: String,
+        /// Print a banner to stderr describing the wrapped invocation
+        #[arg(short, long)]
+        verbose: bool,
         /// Command and arguments to run
         #[arg(trailing_var_arg = true, required = true)]
         cmd: Vec<String>,
@@ -79,13 +93,53 @@ enum Commands {
         #[arg(value_enum)]
         shell: Shell,
     },
+    /// Print shell integration to source in your rc file.
+    ///
+    /// Example: eval "$(gcpx init zsh)"
+    ///
+    /// Installs a `gcpx use <name>` shell function and a chpwd auto-switch
+    /// hook. Both export per-shell env vars (CLOUDSDK_ACTIVE_CONFIG_NAME,
+    /// GOOGLE_APPLICATION_CREDENTIALS, KUBECONFIG) so each terminal has its
+    /// own isolated context — no global filesystem mutation.
+    Init {
+        /// Shell to emit integration for (zsh, bash, fish)
+        shell: String,
+    },
+    /// Set, show, or clear the global default context (used when no .gcpx.toml).
+    Default {
+        /// Context name (omit to show current default)
+        name: Option<String>,
+        /// Clear the default
+        #[arg(long, conflicts_with = "name")]
+        clear: bool,
+    },
+    /// Internal: emit shell exports for `use`/`unuse`/`auto`.
+    /// Invoked by the shell function installed by `gcpx init`.
+    #[command(hide = true, name = "__export")]
+    Export {
+        /// Mode: use, unuse, or auto
+        mode: String,
+        /// Context name (for `use` only; optional → falls back to workspace/default)
+        name: Option<String>,
+        /// Shell flavor (zsh, bash, fish)
+        #[arg(long)]
+        shell: String,
+        /// Override workspace `.gcpx.toml` pin (use only)
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Commands::Save { name, quiet }) => save_context(&name, quiet)?,
+        Some(Commands::Save {
+            name,
+            quiet,
+            no_kubectl,
+            force,
+        }) => save_context(&name, quiet, no_kubectl, force)?,
         Some(Commands::Switch {
             name,
             workspace,
@@ -137,10 +191,16 @@ fn main() -> Result<()> {
             }
         }
         Some(Commands::Current) => {
-            print!("{}", get_current_tracking());
+            // Prefer the per-shell env var set by `gcpx use` / the auto-switch
+            // hook. Falls back to the legacy .current file (only updated by
+            // `gcpx switch`) so older integrations keep working.
+            match env::var("GCPX_CONTEXT") {
+                Ok(v) if !v.is_empty() => print!("{}", v),
+                _ => print!("{}", get_current_tracking()),
+            }
         }
-        Some(Commands::Run { name, cmd }) => {
-            run_with_context(&name, &cmd)?;
+        Some(Commands::Run { name, cmd, verbose }) => {
+            run_with_context(&name, &cmd, verbose)?;
         }
         Some(Commands::Delete {
             name,
@@ -155,6 +215,37 @@ fn main() -> Result<()> {
             let mut cmd = Cli::command();
             let name = cmd.get_name().to_string();
             generate(shell, &mut cmd, name, &mut io::stdout());
+        }
+        Some(Commands::Init { shell }) => match init_snippet(&shell) {
+            Some(s) => print!("{}", s),
+            None => anyhow::bail!("Unsupported shell '{}'. Use zsh, bash, or fish.", shell),
+        },
+        Some(Commands::Default { name, clear }) => {
+            if clear {
+                clear_default()?;
+            } else if let Some(n) = name {
+                set_default(&n)?;
+            } else {
+                match read_default()? {
+                    Some(_) => show_default()?,
+                    None => println!("(no default set)"),
+                }
+            }
+        }
+        Some(Commands::Export {
+            mode,
+            name,
+            shell,
+            force,
+        }) => {
+            let sh = GcpxShell::parse(&shell)?;
+            let out = match mode.as_str() {
+                "use" => export_use(name.as_deref(), force, sh)?,
+                "unuse" => export_unuse(sh)?,
+                "auto" => export_auto(sh)?,
+                other => anyhow::bail!("Unknown __export mode '{}'.", other),
+            };
+            print!("{}", out);
         }
         None => {
             let cwd = env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));

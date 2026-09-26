@@ -32,6 +32,7 @@ impl TestEnv {
         // SAFETY: Tests run serially (cargo test runs single-threaded by default for
         // integration tests), so setting env vars is safe here.
         unsafe {
+            env::set_var("GCPX_ALLOW_TEST_ENV", "1");
             env::set_var("GCPX_HOME", gcpx_dir.path());
             env::set_var("GCPX_GCLOUD_DIR", gcloud_dir.path());
         }
@@ -71,6 +72,7 @@ impl Drop for TestEnv {
         unsafe {
             env::remove_var("GCPX_HOME");
             env::remove_var("GCPX_GCLOUD_DIR");
+            env::remove_var("GCPX_ALLOW_TEST_ENV");
         }
     }
 }
@@ -98,7 +100,7 @@ fn test_save_context_without_adc_fails() {
     let _guard = test_env_guard();
     let _env = TestEnv::new();
 
-    let result = gcpx::save_context("test-context", false);
+    let result = gcpx::save_context("test-context", false, false, true);
     assert!(result.is_err());
     assert!(
         result
@@ -114,8 +116,8 @@ fn test_save_and_list_context() {
     let env = TestEnv::new();
     env.create_fake_adc();
 
-    // Save context
-    gcpx::save_context("my-project", false).expect("Failed to save context");
+    // Save context (force=true to skip interactive prompt in tests)
+    gcpx::save_context("my-project", false, false, true).expect("Failed to save context");
 
     // Verify context appears in list
     let contexts = gcpx::list_contexts().expect("Failed to list contexts");
@@ -139,8 +141,8 @@ fn test_context_exists() {
     // Context doesn't exist yet
     assert!(!gcpx::config::context_exists("new-project").unwrap());
 
-    // Save context
-    gcpx::save_context("new-project", false).expect("Failed to save context");
+    // Save context (force=true to skip interactive prompt in tests)
+    gcpx::save_context("new-project", false, false, true).expect("Failed to save context");
 
     // Now context exists
     assert!(gcpx::config::context_exists("new-project").unwrap());
@@ -152,10 +154,10 @@ fn test_multiple_contexts() {
     let env = TestEnv::new();
     env.create_fake_adc();
 
-    // Save multiple contexts
-    gcpx::save_context("project-a", false).expect("Failed to save context a");
-    gcpx::save_context("project-b", false).expect("Failed to save context b");
-    gcpx::save_context("project-c", false).expect("Failed to save context c");
+    // Save multiple contexts (force=true to skip interactive prompt in tests)
+    gcpx::save_context("project-a", false, false, true).expect("Failed to save context a");
+    gcpx::save_context("project-b", false, false, true).expect("Failed to save context b");
+    gcpx::save_context("project-c", false, false, true).expect("Failed to save context c");
 
     // List should have all three (sorted)
     let contexts = gcpx::list_contexts().expect("Failed to list contexts");
@@ -178,8 +180,8 @@ fn test_delete_context() {
     let env = TestEnv::new();
     env.create_fake_adc();
 
-    // Save and then delete
-    gcpx::save_context("to-delete", false).expect("Failed to save context");
+    // Save and then delete (force=true to skip interactive prompt in tests)
+    gcpx::save_context("to-delete", false, false, true).expect("Failed to save context");
     assert!(gcpx::config::context_exists("to-delete").unwrap());
 
     gcpx::delete_context("to-delete", false).expect("Failed to delete context");
@@ -201,7 +203,11 @@ fn test_run_with_nonexistent_context_fails() {
     let _guard = test_env_guard();
     let _env = TestEnv::new();
 
-    let result = gcpx::run_with_context("nonexistent", &["echo".to_string(), "hello".to_string()]);
+    let result = gcpx::run_with_context(
+        "nonexistent",
+        &["echo".to_string(), "hello".to_string()],
+        false,
+    );
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("not found"));
 }
@@ -211,9 +217,9 @@ fn test_run_with_empty_command_fails() {
     let _guard = test_env_guard();
     let env = TestEnv::new();
     env.create_fake_adc();
-    gcpx::save_context("test-ctx", false).expect("Failed to save context");
+    gcpx::save_context("test-ctx", false, false, true).expect("Failed to save context");
 
-    let result = gcpx::run_with_context("test-ctx", &[]);
+    let result = gcpx::run_with_context("test-ctx", &[], false);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("No command"));
 }
@@ -224,8 +230,9 @@ fn test_save_context_quiet_mode() {
     let env = TestEnv::new();
     env.create_fake_adc();
 
-    // Save with quiet=true should succeed without errors
-    gcpx::save_context("quiet-project", true).expect("Failed to save context in quiet mode");
+    // Save with quiet=true should succeed without errors (force=true to skip interactive prompt in tests)
+    gcpx::save_context("quiet-project", true, false, true)
+        .expect("Failed to save context in quiet mode");
 
     // Verify context was saved correctly despite quiet mode
     let contexts = gcpx::list_contexts().expect("Failed to list contexts");
@@ -262,34 +269,34 @@ fn test_validate_context_name_rejects_traversal() {
     let _env = TestEnv::new();
 
     // Directory traversal attempts should be rejected
-    let result = gcpx::save_context("../etc", false);
+    let result = gcpx::save_context("../etc", false, false, true);
     assert!(result.is_err()); // Rejected (starts with dot)
 
-    let result = gcpx::save_context("a/../etc", false);
+    let result = gcpx::save_context("a/../etc", false, false, true);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("path separators"));
 
-    let result = gcpx::save_context("..", false);
+    let result = gcpx::save_context("..", false, false, true);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("'..'"));
 
-    let result = gcpx::save_context(".", false);
+    let result = gcpx::save_context(".", false, false, true);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("'.'"));
 
-    let result = gcpx::save_context("", false);
+    let result = gcpx::save_context("", false, false, true);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("empty"));
 
-    let result = gcpx::save_context(".hidden", false);
+    let result = gcpx::save_context(".hidden", false, false, true);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("dot"));
 
-    let result = gcpx::save_context("foo/bar", false);
+    let result = gcpx::save_context("foo/bar", false, false, true);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("path separators"));
 
-    let result = gcpx::save_context("foo\\bar", false);
+    let result = gcpx::save_context("foo\\bar", false, false, true);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("path separators"));
 }
@@ -312,7 +319,7 @@ fn test_adc_file_permissions() {
     let env = TestEnv::new();
     env.create_fake_adc();
 
-    gcpx::save_context("secure-project", false).expect("Failed to save context");
+    gcpx::save_context("secure-project", false, false, true).expect("Failed to save context");
 
     let adc_path = env.gcpx_path().join("secure-project").join("adc.json");
     let metadata = fs::metadata(adc_path).expect("Failed to get metadata");
