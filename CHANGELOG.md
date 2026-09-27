@@ -7,13 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+## [0.5.0] - 2026-09-27
 
-- **Guided `gcpx login`** — run without arguments to set up a context step by step: it asks for the context name, signs in once (gcloud + ADC), lists the account's projects in a searchable picker (or lets you type one / skip), saves, and offers to make it the default context. `gcpx login <name> --project <id>` does the same non-interactively.
+### Added — scripts, CI and AI agents
+
+- **Two-step sign-in:** `gcpx reauth <context> --start` prints a Google sign-in link and leaves the sign-in waiting in the background; `gcpx reauth <context> --code <CODE>` (or `--code -` to read stdin) completes it with the verification code the browser shows; `--cancel` discards it. Works for agents and scripts that can't type into a running process. The started sign-in expires after 10 minutes. macOS and Linux.
+- **`--json` output** for `list`, `current`, `status` and `reauth`, with a documented, stable schema.
+- **Exit codes:** `gcpx status` exits with `3` when a gcloud session needs re-authentication (`1` stays for errors).
+- **Global `--yes`:** accept the safe default for any confirmation.
+- **`gcpx agents`** prints a usage guide for agents (also in `AGENTS.md`), and `skills/gcpx/SKILL.md` is an installable agent skill.
+- **Guided `gcpx login`:** run without arguments to set up a context step by step. It asks for the context name, signs in once (gcloud + ADC), lists the account's projects in a searchable picker (or lets you type one / skip), saves, and offers to make it the default context. `gcpx login <name> --project <id>` does the same non-interactively.
 
 ### Changed
 
-- README: new **Getting Started** guide (shell integration → `gcpx login` → defaults / workspace pins → day-to-day `status` / `reauth`).
+- **`gcpx run` exits with the wrapped command's exit code** (was always `1` on failure, plus an extra error line), and sets `KUBECONFIG` and `GCPX_CONTEXT` like `gcpx use` does.
+- **Nothing blocks or fails with "not a terminal" any more.** Without a terminal, `gcpx` alone prints help, prompts are replaced by their safe default under `--yes` or by an error naming the flag to use, and `gcpx reauth` forces the browser sign-in (no password prompt is possible).
+- **`gcpx save`** no longer saves a GKE kubectl context it can't verify (no gcloud project set) without asking; without a terminal it saves without kubectl and says so.
+- `gcpx login` says gcloud will open the browser *or print a link*.
+- README: new **Getting Started** guide and a **Scripts, CI and AI agents** section.
+
+### Fixed
+
+- `gcpx status` suggested only the gcloud fix when both the gcloud session and ADC of a context were stale.
 
 ## [0.4.0] - 2026-09-25
 

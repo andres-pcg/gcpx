@@ -47,7 +47,7 @@ pub fn login_context(name: Option<&str>, project: Option<&str>, quiet: bool) -> 
     // One browser flow for both gcloud and ADC: --update-adc writes the same
     // grant to the ADC file, instead of a second `application-default login`.
     println!("\nStarting gcloud authentication (gcloud + ADC)...");
-    println!("A browser window will open for you to sign in.\n");
+    println!("gcloud will open your browser, or print a link to open if it can't.\n");
 
     let auth_status = Command::new("gcloud")
         .args(["auth", "login", "--update-adc"])

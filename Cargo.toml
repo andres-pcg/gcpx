@@ -1,6 +1,6 @@
 [package]
 name = "gcpx"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 rust-version = "1.85"
 authors = ["Andrés Rodríguez"]
@@ -26,3 +26,6 @@ base64 = "0.22"
 [dev-dependencies]
 base64 = "0.22"
 tempfile = "3.15"
+
+[target."cfg(unix)".dependencies]
+libc = "0.2"

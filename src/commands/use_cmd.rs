@@ -78,12 +78,13 @@ fn shell_quote_fish(s: &str) -> String {
     format!("'{}'", escaped)
 }
 
-/// Builds the Set ops to activate a context. Errors if context is missing.
-fn ops_for_context(name: &str) -> Result<Vec<Op>> {
+/// Environment that activates a context: `Some(value)` to set, `None` to
+/// unset. Shared by `gcpx use` (shell exports) and `gcpx run` (child env) so
+/// both always agree. Errors if the context is missing.
+pub fn context_env(name: &str) -> Result<Vec<(&'static str, Option<String>)>> {
     if !context_exists(name)? {
         bail!(
-            "Context '{}' not found. Run 'gcpx save {}' or 'gcpx login {}' first.",
-            name,
+            "Context '{}' not found. Run 'gcpx login {}' first (or 'gcpx list' to see contexts).",
             name,
             name
         );
@@ -94,24 +95,31 @@ fn ops_for_context(name: &str) -> Result<Vec<Op>> {
         .as_ref()
         .map(|m| m.gcloud_config.clone())
         .unwrap_or_else(|| name.to_string());
-
-    let mut ops = vec![
-        Op::Set(
-            "GOOGLE_APPLICATION_CREDENTIALS",
-            adc.to_string_lossy().into_owned(),
-        ),
-        Op::Set("CLOUDSDK_ACTIVE_CONFIG_NAME", gcloud_config),
-        Op::Set("GCPX_CONTEXT", name.to_string()),
-    ];
-
     let kube = get_context_kube_path(name)?;
-    if kube.exists() {
-        ops.push(Op::Set("KUBECONFIG", kube.to_string_lossy().into_owned()));
-    } else {
-        ops.push(Op::Unset("KUBECONFIG"));
-    }
 
-    Ok(ops)
+    Ok(vec![
+        (
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            Some(adc.to_string_lossy().into_owned()),
+        ),
+        ("CLOUDSDK_ACTIVE_CONFIG_NAME", Some(gcloud_config)),
+        ("GCPX_CONTEXT", Some(name.to_string())),
+        (
+            "KUBECONFIG",
+            kube.exists().then(|| kube.to_string_lossy().into_owned()),
+        ),
+    ])
+}
+
+/// Builds the shell ops to activate a context.
+fn ops_for_context(name: &str) -> Result<Vec<Op>> {
+    Ok(context_env(name)?
+        .into_iter()
+        .map(|(k, v)| match v {
+            Some(v) => Op::Set(k, v),
+            None => Op::Unset(k),
+        })
+        .collect())
 }
 
 fn unset_all() -> Vec<Op> {

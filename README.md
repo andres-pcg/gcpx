@@ -30,6 +30,7 @@ Managing multiple GCP accounts is painful:
 | **Status** | Show which contexts have expired sessions (Google's 16h session control) |
 | **Reauth** | Refresh only what expired — password prompt when allowed, ADC opt-in with `--adc` |
 | **Delete** | Remove saved contexts |
+| **Agent-ready** | `--json` output, documented exit codes, never blocks without a terminal, two-step sign-in (`reauth --start` / `--code`), `gcpx agents` guide and an installable agent skill |
 | **Completions** | Shell completion for bash, zsh, fish, powershell |
 | **kubectl** | Automatically saves and restores kubectl context (with project validation) |
 | **Smart skip** | Skips switching if already on the requested context |
@@ -228,6 +229,8 @@ gcpx run work gcloud compute instances list --format=json | jq '.[].name'
 gcpx run -v work gcloud compute instances list
 ```
 
+The command gets the same environment `gcpx use` would export (`GOOGLE_APPLICATION_CREDENTIALS`, `CLOUDSDK_ACTIVE_CONFIG_NAME`, `KUBECONFIG`, `GCPX_CONTEXT`), and `gcpx run` exits with the command's own exit code.
+
 ### Expired sessions (Google Cloud session control)
 
 Google Cloud now expires sessions for human users after **16 hours by default** (session control / reauthentication policy). Stored credentials keep existing, but Google refuses to refresh them (`invalid_rapt` / `rapt_required`) until you re-authenticate. gcpx detects this and fixes only what is stale.
@@ -263,6 +266,39 @@ gcpx delete old-project
 # Also delete the gcloud configuration
 gcpx delete old-project --gcloud-config
 ```
+
+## Scripts, CI and AI agents
+
+gcpx works without a terminal: it never waits for input, and anything you'd parse has a `--json` form.
+
+```bash
+gcpx list --json                 # contexts, accounts, projects
+gcpx status --json               # session health; exit code 3 = re-authentication needed
+gcpx run <context> -- <command>  # run with a context; exits with the command's code
+gcpx --yes <command>             # accept the safe default instead of prompting
+```
+
+**Signing in from an agent.** An agent can't type into a running `gcloud auth login`, so gcpx splits it in two:
+
+```bash
+gcpx reauth <context> --start --json       # → {"url": "https://accounts.google.com/...", ...}
+# the user opens the link, signs in, and pastes back the verification code
+echo "<code>" | gcpx reauth <context> --code - --json
+```
+
+The code is single-use and only works with the sign-in gcpx started on that machine. Add `--adc` to `--start` to refresh ADC too; `--cancel` discards a started sign-in. (macOS and Linux.)
+
+**Exit codes:** `0` ok · `1` error · `2` usage error · `3` re-authentication needed (`status`) · `gcpx run` returns the wrapped command's code.
+
+**Agent guide and skill.** `gcpx agents` prints the full guide for agents ([AGENTS.md](AGENTS.md)): rules, JSON schemas and the sign-in flow. To make gcpx a default tool for Claude Code, install the bundled skill:
+
+```bash
+mkdir -p ~/.claude/skills/gcpx
+curl -fsSL https://raw.githubusercontent.com/andres-pcg/gcpx/main/skills/gcpx/SKILL.md \
+  -o ~/.claude/skills/gcpx/SKILL.md
+```
+
+Other agents can point at `gcpx agents` or [AGENTS.md](AGENTS.md) the same way.
 
 ## Shell Prompt Integration
 

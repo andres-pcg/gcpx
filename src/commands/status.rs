@@ -1,6 +1,7 @@
 //! Status command — show credential health for saved contexts.
 
 use anyhow::{Result, bail};
+use serde_json::{Value, json};
 use std::time::Duration;
 
 use crate::auth::{ContextHealth, CredState, check_contexts};
@@ -59,10 +60,49 @@ fn print_health(h: &ContextHealth) {
     }
 }
 
-/// `gcpx status [name]`. Returns an error (non-zero exit) when any checked
-/// context has a stale gcloud credential or an account mismatch, so it can be
-/// used in scripts.
-pub fn status(name: Option<&str>) -> Result<()> {
+/// Machine-readable report for one context (`gcpx status --json`).
+fn health_json(h: &ContextHealth) -> Value {
+    let mut issues = Vec::new();
+    let mut fix = Vec::new();
+    if h.gcloud_stale() {
+        issues.push("gcloud_reauth_required");
+    }
+    if h.config_mismatch() {
+        issues.push("config_account_mismatch");
+    }
+    if h.gcloud_stale() || h.config_mismatch() {
+        fix.push(format!("gcpx reauth {}", h.name));
+    }
+    if h.adc_stale() {
+        issues.push("adc_stale");
+    }
+    if h.adc_mismatch() {
+        issues.push("adc_account_mismatch");
+    }
+    if h.adc_stale() || h.adc_mismatch() {
+        fix.push(format!("gcpx reauth {} --adc", h.name));
+    }
+    json!({
+        "name": h.name,
+        "account": h.expected_account,
+        "gcloud_config": h.gcloud_config,
+        "config_account": h.config_account,
+        "gcloud": h.gcloud.as_ref().map(|s| json!({"state": s.code(), "detail": s.detail()})),
+        "adc": {
+            "state": h.adc.state.code(),
+            "detail": h.adc.state.detail(),
+            "account": h.adc.email,
+            "fresher_available": h.fresher_adc_available,
+        },
+        "issues": issues,
+        "fix": fix,
+    })
+}
+
+/// `gcpx status [name] [--json]`. Returns `true` when any checked context has
+/// a stale gcloud credential or an account mismatch (the CLI then exits with
+/// code 3, so scripts and agents can tell "needs reauth" from errors).
+pub fn status(name: Option<&str>, as_json: bool) -> Result<bool> {
     let names = match name {
         Some(n) => {
             validate_context_name(n)?;
@@ -74,30 +114,59 @@ pub fn status(name: Option<&str>) -> Result<()> {
         None => list_contexts()?,
     };
     if names.is_empty() {
-        println!("No contexts found. Create one with 'gcpx login <name>'");
-        return Ok(());
+        if as_json {
+            println!(
+                "{}",
+                json!({"contexts": [], "needs_reauth": [], "adc_stale": []})
+            );
+        } else {
+            println!("No contexts found. Create one with 'gcpx login'");
+        }
+        return Ok(false);
     }
 
     let mut needs_reauth = Vec::new();
     let mut needs_adc = Vec::new();
+    let mut reports = Vec::new();
     for (i, res) in check_contexts(&names, Duration::from_secs(15))
         .into_iter()
         .enumerate()
     {
-        if i > 0 {
+        if !as_json && i > 0 {
             println!();
         }
         match res {
             Ok(h) => {
-                print_health(&h);
+                if as_json {
+                    reports.push(health_json(&h));
+                } else {
+                    print_health(&h);
+                }
                 if h.gcloud_stale() || h.config_mismatch() {
                     needs_reauth.push(h.name.clone());
-                } else if h.adc_stale() || h.adc_mismatch() {
+                }
+                if h.adc_stale() || h.adc_mismatch() {
                     needs_adc.push(h.name.clone());
                 }
             }
-            Err(e) => println!("{}  ? {}", names[i], e),
+            Err(e) => {
+                if as_json {
+                    reports.push(json!({"name": names[i], "error": e.to_string()}));
+                } else {
+                    println!("{}  ? {}", names[i], e);
+                }
+            }
         }
+    }
+
+    if as_json {
+        let out = json!({
+            "contexts": reports,
+            "needs_reauth": needs_reauth,
+            "adc_stale": needs_adc,
+        });
+        println!("{}", serde_json::to_string_pretty(&out)?);
+        return Ok(!needs_reauth.is_empty());
     }
 
     if !needs_reauth.is_empty() || !needs_adc.is_empty() {
@@ -109,8 +178,5 @@ pub fn status(name: Option<&str>) -> Result<()> {
     if !needs_adc.is_empty() {
         println!("Fix ADC:     gcpx reauth {} --adc", needs_adc.join(" "));
     }
-    if !needs_reauth.is_empty() {
-        bail!("{} context(s) need re-authentication", needs_reauth.len());
-    }
-    Ok(())
+    Ok(!needs_reauth.is_empty())
 }

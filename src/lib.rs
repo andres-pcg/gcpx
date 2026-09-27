@@ -19,6 +19,7 @@ pub mod auth;
 pub mod commands;
 pub mod config;
 pub mod init;
+pub mod prompt;
 pub mod workspace;
 
 // Re-export commonly used items
