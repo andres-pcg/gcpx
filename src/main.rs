@@ -79,10 +79,16 @@ enum Commands {
         #[arg(long)]
         gcloud_config: bool,
     },
-    /// Re-authenticate and save credentials for a context
+    /// Set up (or re-authenticate) a context: sign in, pick a project, save
+    ///
+    /// Run without arguments for a guided setup that asks for the context
+    /// name and lets you pick a project from your account.
     Login {
-        /// Context name to authenticate
-        name: String,
+        /// Context name (prompted if omitted)
+        name: Option<String>,
+        /// Default project for the context (prompted with a picker if omitted)
+        #[arg(long)]
+        project: Option<String>,
         /// Quiet mode - hide sensitive details (account, project, etc.)
         #[arg(short, long)]
         quiet: bool,
@@ -231,8 +237,12 @@ fn main() -> Result<()> {
         }) => {
             delete_context(&name, gcloud_config)?;
         }
-        Some(Commands::Login { name, quiet }) => {
-            login_context(&name, quiet)?;
+        Some(Commands::Login {
+            name,
+            project,
+            quiet,
+        }) => {
+            login_context(name.as_deref(), project.as_deref(), quiet)?;
         }
         Some(Commands::Status { name }) => {
             status(name.as_deref())?;
