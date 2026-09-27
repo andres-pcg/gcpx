@@ -56,6 +56,26 @@ impl CredState {
         )
     }
 
+    /// Stable machine-readable identifier (used in `--json` output).
+    pub fn code(&self) -> &'static str {
+        match self {
+            CredState::Valid => "ok",
+            CredState::ReauthRequired => "reauth_required",
+            CredState::Revoked => "revoked",
+            CredState::Missing => "missing",
+            CredState::NotChecked(_) => "not_checked",
+            CredState::Unknown(_) => "unknown",
+        }
+    }
+
+    /// Extra detail for `not_checked` / `unknown`.
+    pub fn detail(&self) -> Option<&str> {
+        match self {
+            CredState::NotChecked(s) | CredState::Unknown(s) => Some(s),
+            _ => None,
+        }
+    }
+
     pub fn label(&self) -> String {
         match self {
             CredState::Valid => "ok".into(),

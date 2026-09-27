@@ -12,6 +12,7 @@ use crate::config::{
     get_current_gcloud_project, get_current_kubectl_context, save_context_metadata,
     set_current_tracking, validate_context_name, write_secret,
 };
+use crate::prompt;
 
 /// Sanitize untrusted strings before printing — strip ASCII control chars
 /// (including ESC) so a malicious kubectl context name can't inject terminal
@@ -157,10 +158,23 @@ fn validate_kubectl_context(
         }
     };
 
-    // If no gcloud project set, skip validation
+    // No gcloud project: the GKE context can't be verified against it, so
+    // ask rather than silently saving a cluster that may belong elsewhere.
     let gcloud_project = match gcloud_project {
         Some(p) => p,
-        None => return Ok(Some(kubectl_context)),
+        None => {
+            eprintln!();
+            eprintln!(
+                "Warning: no gcloud project is set, so the kubectl context can't be verified"
+            );
+            eprintln!(
+                "  kubectl context: {} (project: {})",
+                sanitize_for_display(&kubectl_context),
+                sanitize_for_display(&kubectl_project)
+            );
+            eprintln!();
+            return resolve_kubectl_choice(kubectl_context);
+        }
     };
 
     // Check if projects match
@@ -179,6 +193,18 @@ fn validate_kubectl_context(
     );
     eprintln!();
 
+    resolve_kubectl_choice(kubectl_context)
+}
+
+fn resolve_kubectl_choice(kubectl_context: String) -> Result<Option<String>> {
+    // Without a terminal (or with --yes) take the safe option: don't save a
+    // kubectl context that may point at another project's cluster.
+    if prompt::assume_yes() || !prompt::is_interactive() {
+        eprintln!(
+            "  Saving without kubectl context (use `gcpx save <name> --force` to keep it anyway)."
+        );
+        return Ok(None);
+    }
     let choice = prompt_kubectl_mismatch()?;
 
     match choice {
