@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-31
+
+### Fixed
+
+- **`gcpx reauth --adc` no longer stops at a gcloud prompt** in a terminal on `gcpx use <context>`. gcpx passed `GOOGLE_APPLICATION_CREDENTIALS` along to `gcloud auth login --update-adc`, so gcloud asked whether to write ADC to its default location anyway. gcpx now removes the variable when it calls gcloud to sign in or set the quota project (`reauth`, two-step `--start`, `login`).
+- **`gcpx reauth --code`** reports gcloud's error even when it's printed on the same line as gcloud's verification-code prompt.
+
+### Added
+
+- End-to-end tests that drive the `gcpx` binary without a terminal against a stand-in gcloud (`tests/cli_e2e.rs`), run in CI on macOS and Linux.
+
 ## [0.5.0] - 2026-09-27
 
 ### Added — scripts, CI and AI agents

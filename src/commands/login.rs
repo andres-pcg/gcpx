@@ -52,6 +52,10 @@ pub fn login_context(name: Option<&str>, project: Option<&str>, quiet: bool) -> 
     let auth_status = Command::new("gcloud")
         .args(["auth", "login", "--update-adc"])
         .env("CLOUDSDK_ACTIVE_CONFIG_NAME", &name)
+        // gcloud would otherwise ask whether to write ADC to its default
+        // location when a `gcpx use` shell exports this; that location is
+        // where `save` reads it from.
+        .env_remove("GOOGLE_APPLICATION_CREDENTIALS")
         .status()
         .context("Failed to run gcloud auth login")?;
 
@@ -172,6 +176,7 @@ fn set_adc_quota_project(name: &str, project: &str) {
     let ok = Command::new("gcloud")
         .args(["auth", "application-default", "set-quota-project", project])
         .env("CLOUDSDK_ACTIVE_CONFIG_NAME", name)
+        .env_remove("GOOGLE_APPLICATION_CREDENTIALS")
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
