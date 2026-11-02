@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`gcpx reauth --adc` no longer stops at a gcloud prompt** in a terminal on `gcpx use <context>`. gcpx passed `GOOGLE_APPLICATION_CREDENTIALS` along to `gcloud auth login --update-adc`, so gcloud asked whether to write ADC to its default location anyway. gcpx now removes the variable when it calls gcloud to sign in or set the quota project (`reauth`, two-step `--start`, `login`).
 - **`gcpx reauth --code`** reports gcloud's error even when it's printed on the same line as gcloud's verification-code prompt.
 
+### Security
+
+- Updated `rustls` to 0.23.46, `rustls-webpki` to 0.103.16 and `webpki-roots` to 1.0.11 (RUSTSEC-2026-0346, -0347, -0348, -0349, -0381, -0382), and `anyhow` to 1.0.104 (RUSTSEC-2026-0190). gcpx uses TLS only to check credentials against Google's token endpoint.
+
 ### Added
 
 - End-to-end tests that drive the `gcpx` binary without a terminal against a stand-in gcloud (`tests/cli_e2e.rs`), run in CI on macOS and Linux.
