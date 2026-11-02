@@ -306,7 +306,12 @@ fn run_gcloud_login(
     let mut cmd = Command::new("gcloud");
     cmd.args(&args)
         .env("CLOUDSDK_ACTIVE_CONFIG_NAME", cfg)
-        .env_remove("CLOUDSDK_CORE_ACCOUNT");
+        .env_remove("CLOUDSDK_CORE_ACCOUNT")
+        // A shell on `gcpx use` exports GOOGLE_APPLICATION_CREDENTIALS. With
+        // --update-adc gcloud would then stop to ask whether to write ADC to
+        // its default location anyway — which is exactly where gcpx picks it
+        // up. The variable plays no part in signing in, so drop it.
+        .env_remove("GOOGLE_APPLICATION_CREDENTIALS");
     if !interactive {
         cmd.stdin(Stdio::null());
     }
@@ -472,10 +477,11 @@ pub fn find_auth_url(log: &str) -> Option<String> {
 
 /// Last meaningful gcloud error line, for reporting. Pure; unit-tested.
 pub fn last_gcloud_error(log: &str) -> Option<String> {
+    // The error can share a line with gcloud's "enter the verification code:"
+    // prompt (no newline after the prompt), so match it anywhere in the line.
     log.lines()
         .rev()
-        .map(str::trim)
-        .find(|l| l.starts_with("ERROR:"))
+        .find_map(|l| l.find("ERROR:").map(|i| l[i..].trim()))
         .map(|l| l.chars().take(200).collect())
 }
 
@@ -770,6 +776,7 @@ pub fn worker(name: &str) -> Result<()> {
         .args(&args)
         .env("CLOUDSDK_ACTIVE_CONFIG_NAME", &state.gcloud_config)
         .env_remove("CLOUDSDK_CORE_ACCOUNT")
+        .env_remove("GOOGLE_APPLICATION_CREDENTIALS") // see run_gcloud_login
         .stdin(Stdio::piped())
         .stdout(log.try_clone()?)
         .stderr(log)
@@ -874,6 +881,15 @@ mod tests {
             Some("https://accounts.google.com/o/oauth2/auth?response_type=code&client_id=x")
         );
         assert_eq!(find_auth_url("nothing here"), None);
+    }
+
+    #[test]
+    fn extracts_gcloud_error_after_prompt_on_same_line() {
+        let log = "Enter the verification code: ERROR: (gcloud.auth.login) (invalid_grant) Malformed auth code.";
+        assert_eq!(
+            last_gcloud_error(log).as_deref(),
+            Some("ERROR: (gcloud.auth.login) (invalid_grant) Malformed auth code.")
+        );
     }
 
     #[test]
